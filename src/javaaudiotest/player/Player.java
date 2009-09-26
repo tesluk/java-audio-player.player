@@ -43,9 +43,9 @@ public final class Player {
 
     private volatile PlayerState state = PlayerState.STOPPED;
 
-    private volatile long currentBufferedTimeMcsec = 0;
+    /* package */ volatile long currentBufferedTimeMcsec = 0;
 
-    private volatile long currentPlayTimeMcsec = 0;
+    /* package */ volatile long currentPlayTimeMcsec = 0;
 
     private volatile long currentSeekPositionMcsec = 0;
 
@@ -115,24 +115,21 @@ public final class Player {
         this.listener = listener;
     }
 
-    public LineListener getLineListener() {
-        return lineListener;
+    public PlayerEventListener getListener() {
+        return listener;
     }
-
     // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------
     // internal data
 
-    private final Object osync = new Object();
+    /* package */ final Object osync = new Object();
 
     private Decoder decoder;
 
     private volatile SourceDataLine currentDataLine;
 
     private final AtomicReference<PlayerThread> currentPlayerThread = new AtomicReference<PlayerThread>();
-
-    private final AtomicReference<PlayerHelperThread> currentPlayerHelperThread = new AtomicReference<PlayerHelperThread>();
 
     private AudioFormat getAudioFormatValue() {
         return new AudioFormat( decoder.getOutputFrequency(),
@@ -146,6 +143,14 @@ public final class Player {
         //DataLine.Info info = new DataLine.Info(SourceDataLine.class, fmt, 4000);
         DataLine.Info info = new DataLine.Info( SourceDataLine.class, getAudioFormatValue() );
         return info;
+    }
+
+    /* package */ SourceDataLine getCurrentDataLine() {
+        return currentDataLine;
+    }
+
+    /* package */ SeekablePumpStream getPumpStream() {
+        return pumpStream;
     }
 
     private SourceDataLine createLine() {
@@ -204,18 +209,11 @@ public final class Player {
                 th.start();
         }
 
-        PlayerHelperThread hth = currentPlayerHelperThread.get();
-
-        if( hth == null ) {
-            hth = new PlayerHelperThread();
-            if( currentPlayerHelperThread.compareAndSet( null, hth ) )
-                hth.start();
-        }
     }
 
     private void waitForState( PlayerState st ) throws InterruptedException {
-        synchronized(osync) {
-            while(state != st ) {
+        synchronized( osync ) {
+            while( state != st ) {
                 osync.wait();
             }
         }
@@ -236,9 +234,6 @@ public final class Player {
             th.die();
         }
 
-        PlayerHelperThread hth = currentPlayerHelperThread.get();
-        if( hth != null )
-            hth.die();
     }
 
     public void stop() {
@@ -325,13 +320,15 @@ public final class Player {
             line = currentDataLine = createLine();
             line.open( getAudioFormatValue() );
             populateVolume( line );
-            line.addLineListener( lineListener );
+            //line.addLineListener( lineListener );
             line.start();
 
             synchronized( osync ) {
                 state = PlayerState.PLAYING;
                 osync.notifyAll();
             }
+            new PlayerListenerNotificator( Player.this ).start();
+            new PlayerHelperThread( Player.this ).start();
         }
 
         private boolean decodeFrame() throws BitstreamException, DecoderException, LineUnavailableException, InterruptedException {
@@ -506,7 +503,8 @@ public final class Player {
                 e.printStackTrace();
             } finally {
                 try {
-                    bstream.close();
+                    if( bstream != null )
+                        bstream.close();
                 } catch( BitstreamException ignore ) {
                 }
                 //close(pumpStream);
@@ -519,9 +517,9 @@ public final class Player {
 
                 if( currentPlayerThread.compareAndSet( this, null ) ) {
                     // TODO: notify stopped
-                    synchronized(osync) {
+                    synchronized( osync ) {
                         if( requestedState != null ) {
-                            switch( requestedState  ) {
+                            switch( requestedState ) {
                                 case STOPPED:
                                     currentSeekPositionMcsec = 0;
                                     state = requestedState;
@@ -552,69 +550,6 @@ public final class Player {
 
         public void setRequestedState( PlayerState requestedState ) {
             this.requestedState = requestedState;
-        }
-
-    }
-
-    private class PlayerHelperThread extends Thread {
-
-        public PlayerHelperThread() {
-            super( "player-helper-thread" );
-        }
-
-        private volatile boolean dieRequested = false;
-
-        @Override
-        public void run() {
-            try {
-                SourceDataLine line;
-                int available;
-                int size;
-                float rate;
-                long time;
-                while( !dieRequested && currentPlayerThread.get() != null ) {
-                    sleep( 150 );
-                    if( ( line = currentDataLine ) != null ) {
-                        size = line.getBufferSize();
-                        available = line.available();
-                        time = line.getMicrosecondPosition();
-
-                        currentPlayTimeMcsec = time;
-
-                        rate = ( (float) available ) / ( (float) size );
-                        synchronized( osync ) {
-                            if( rate > 0.9 ) {
-                                if( state == PlayerState.PLAYING && !pumpStream.isAllDownloaded() ) {
-                                    System.out.println( "low speed detected.. lets pause" );
-                                    state = PlayerState.PAUSED_BUFFERING;
-                                    continue;
-                                    //line.stop();   // !! NEVER STOP LINE to prevent player-playback-thread spinning on Linux
-                                }
-                            }
-                            if( state == PlayerState.PAUSED_BUFFERING ) {
-                                if( ( /*rate == 0. && */ ( ( currentBufferedTimeMcsec - currentPlayTimeMcsec ) > 10000000L ) ) || pumpStream.isAllDownloaded() ) {
-                                    // NOTE: rate unchecked, because in this state player-playback-thread sleeping and can't fill device buffer
-                                    System.out.println( "lets resume" );
-                                    osync.wait( 500 );
-                                    state = PlayerState.PLAYING;
-                                    osync.notifyAll();
-                                    osync.wait( 500 );
-                                    //line.start();
-                                }
-                            }
-                        }
-
-                    }
-                }
-            } catch( InterruptedException ignore ) {
-            } finally {
-                currentPlayerHelperThread.compareAndSet( this, null );
-            }
-        }
-
-        public void die() {
-            dieRequested = true;
-            interrupt();
         }
 
     }
@@ -654,43 +589,6 @@ public final class Player {
         public void die() {
             dieRequested = true;
             interrupt();
-        }
-
-    }
-
-    private class EventNotificator extends Thread {
-
-        private void callChanged() {
-            PlayerEventListener l = listener;
-            if( l != null ) {
-                try {
-                    l.stateChanged();
-                } catch( Throwable t ) {
-                    t.printStackTrace();
-                }
-            }
-        }
-
-        @Override
-        public void run() {
-            PlayerState lastState = state;
-            boolean lastEOM = false;
-            boolean letsFire = false;
-
-            try {
-                while(currentPlayerThread.get() != null) {
-                    synchronized(osync) {
-                        if( state == lastState ) {
-                            osync.wait( 500 );
-                        } else {
-                            letsFire = true;
-                            lastState = state;
-                        }
-                    }
-                    // TOOD: notify here
-                }
-            } catch( InterruptedException ignore ) {
-            }
         }
 
     }
