@@ -31,7 +31,7 @@ public class PlayerListenerNotificatorThread extends Thread {
             w = new NotificationWrapper();
             w.start();
         } else {
-            if( old > 0 && (System.currentTimeMillis() - lastTime) > 15000 ) {
+            if( old > 0 && ( System.currentTimeMillis() - lastTime ) > 15000 ) {
                 w.interrupt();
                 w = null;
                 notifyListenerState();
@@ -53,11 +53,15 @@ public class PlayerListenerNotificatorThread extends Thread {
             notifyListenerState();
             while( !dieRequest ) {
                 synchronized( parent.osync ) {
-                    parent.osync.wait();
+                    while( lastState == parent.getState() && lastPosition == parent.getCurrentPosition() )
+                        parent.osync.wait();
                 }
 
                 if( lastState != parent.getState() || lastPosition != parent.getCurrentPosition() )
                     notifyListenerState();
+
+                lastState = parent.getState();
+                lastPosition = parent.getCurrentPosition();
 
                 if( parent.getState() == PlayerState.STOPPED || parent.getState() == PlayerState.PAUSED ) {
                     synchronized( osync ) {
@@ -83,7 +87,6 @@ public class PlayerListenerNotificatorThread extends Thread {
 
         private void call() {
             try {
-                System.out.println( "call listener" );
                 PlayerEventListener l = parent.getListener();
                 if( l != null )
                     l.stateChanged();

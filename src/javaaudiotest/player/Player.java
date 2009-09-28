@@ -7,6 +7,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.InterruptedIOException;
 import java.io.OutputStreamWriter;
 import java.net.URL;
 import java.net.URLConnection;
@@ -52,6 +53,8 @@ public final class Player {
     private volatile long totalPlayTimeMcsec = 0;
 
     private PlayerEventListener listener;
+
+    /* package */ volatile long lastPlayerActivity = 0;
 
     public float getCurrentVolume() {
         return currentVolume;
@@ -242,6 +245,15 @@ public final class Player {
 
     public void stop() {
         interruptPlayback( PlayerState.STOPPED );
+        currentSeekPositionMcsec = 0;
+        currentPlayTimeMcsec = 0;
+        SourceDataLine l = currentDataLine;
+        if( l != null ) {
+            try {
+                l.stop();
+            } catch( Throwable ignoredT ) { // be silent
+            }
+        }
     }
 
     public void stopSync() throws InterruptedException {
@@ -278,16 +290,16 @@ public final class Player {
         }
     }
 
-    private LineListener lineListener = new LineListener() {
-
-        public void update( LineEvent event ) {
-            System.out.println( "line event: " + event );
-            System.out.println( "line event type: " + event.getType() );
-            System.out.println( "line event pos: " + event.getFramePosition() );
-            System.out.println( "line event thread: " + Thread.currentThread().getName() );
-        }
-
-    };
+//    private LineListener lineListener = new LineListener() {
+//
+//        public void update( LineEvent event ) {
+//            System.out.println( "line event: " + event );
+//            System.out.println( "line event type: " + event.getType() );
+//            System.out.println( "line event pos: " + event.getFramePosition() );
+//            System.out.println( "line event thread: " + Thread.currentThread().getName() );
+//        }
+//
+//    };
 
     private InputStream realInputStream;
 
@@ -363,9 +375,9 @@ public final class Player {
 
 
             synchronized( osync ) {
-                if( state == PlayerState.PAUSED_BUFFERING )
+                while( state == PlayerState.PAUSED_BUFFERING )
                     osync.wait();
-                else if( state == PlayerState.STOPPED )
+                if( state == PlayerState.STOPPED )
                     return false;
 
                 int wasWritten = 0;
@@ -406,7 +418,7 @@ public final class Player {
                     throw new IllegalArgumentException( "Bad path to file" );
                 realInputStreamLength = (int) f.length();
                 if( slow )
-                    realInputStream = new EmulateSlowInputStream( realInputStream, 0.1 );
+                    realInputStream = new EmulateSlowInputStream( realInputStream, 0.3 );
             }
         }
 
@@ -421,7 +433,7 @@ public final class Player {
                     int wasRead;
 
                     while( ( wasRead = isr.read( buffer ) ) != -1 ) {
-                        osw.write( buffer, 0, wasRead );
+                        //osw.write( buffer, 0, wasRead );
                     }
                     osw.flush();
                     System.out.println();
@@ -482,9 +494,23 @@ public final class Player {
 
                 skipFrames( currentSeekPositionMcsec );
 
+                long lastUpdate = 0;
+
                 while( !dieRequested && framesPlayed < framesToBePlayed ) {
                     if( !decodeFrame() )
                         break;
+
+                    currentPlayTimeMcsec = line.getMicrosecondPosition();
+
+                    long now = System.currentTimeMillis();
+                    lastPlayerActivity = now;
+                    if( now - lastUpdate > 250 ) {
+                        synchronized( osync ) {
+                            osync.notifyAll();
+                        }
+                        lastUpdate = now;
+                    }
+
                 }
 
                 if( line != null ) {
@@ -497,6 +523,7 @@ public final class Player {
 
             } catch( BitstreamException e ) {
                 e.printStackTrace();
+            } catch( InterruptedIOException ignore ) {
             } catch( IOException e ) {
                 e.printStackTrace();
             } catch( DecoderException e ) {
@@ -504,7 +531,6 @@ public final class Player {
             } catch( LineUnavailableException e ) {
                 e.printStackTrace();
             } catch( InterruptedException e ) {
-                e.printStackTrace();
             } finally {
                 try {
                     if( bstream != null )
@@ -517,6 +543,7 @@ public final class Player {
                     mspos = line.getMicrosecondPosition() >> 32;
                     line.stop();
                     line.close();
+                    currentDataLine = null;
                 }
 
                 if( currentPlayerThread.compareAndSet( this, null ) ) {
@@ -537,8 +564,9 @@ public final class Player {
                             }
 
                         } else {
-                            state = PlayerState.STOPPED;
                             currentSeekPositionMcsec = 0;
+                            currentPlayTimeMcsec = 0;
+                            state = PlayerState.STOPPED;
                         }
                         osync.notifyAll();
                     }
