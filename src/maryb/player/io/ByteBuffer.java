@@ -1,4 +1,4 @@
-package javaaudiotest.player.io;
+package maryb.player.io;
 
 /**
  * Simple byte buffer implementation. Concurrent-safe.

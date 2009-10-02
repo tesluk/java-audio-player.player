@@ -7,9 +7,9 @@
 package javaaudiotest;
 
 import java.io.File;
-import javaaudiotest.player.Player;
-import javaaudiotest.player.PlayerEventListener;
-import javaaudiotest.player.PlayerState;
+import maryb.player.Player;
+import maryb.player.PlayerEventListener;
+import maryb.player.PlayerState;
 import javax.swing.JFileChooser;
 import javax.swing.SwingUtilities;
 

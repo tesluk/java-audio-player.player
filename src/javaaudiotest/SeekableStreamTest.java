@@ -14,7 +14,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.util.Random;
-import javaaudiotest.player.io.SeekablePumpStream;
+import maryb.player.io.SeekablePumpStream;
 import javax.swing.SwingUtilities;
 
 /**

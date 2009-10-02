@@ -1,4 +1,4 @@
-package javaaudiotest.player;
+package maryb.player;
 
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -48,20 +48,42 @@ public class PlayerListenerNotificatorThread extends Thread {
     public void run() {
         PlayerState lastState = parent.getState();
         long lastPosition = parent.getCurrentPosition();
+        long lastBufferedPosition = parent.getCurrentBufferedTimeMcsec();
+        long lastTotalTime = parent.getTotalPlayTimeMcsec();
 
         try {
             notifyListenerState();
+            long now, lastReaction = 0;
+            boolean chk;
             while( !dieRequest ) {
-                synchronized( parent.osync ) {
-                    while( lastState == parent.getState() && lastPosition == parent.getCurrentPosition() )
-                        parent.osync.wait();
-                }
+                while( true ) {
+                    chk = lastState != parent.getState() ||
+                            lastPosition != parent.getCurrentPosition() ||
+                            lastBufferedPosition != parent.getCurrentBufferedTimeMcsec() ||
+                            lastTotalTime != parent.getTotalPlayTimeMcsec();
 
-                if( lastState != parent.getState() || lastPosition != parent.getCurrentPosition() )
+                    if( chk )
+                        break;
+
+                    synchronized( parent.osync ) {
+                        parent.osync.wait();
+                    }
+                }
+//                    now = System.currentTimeMillis();
+//                    if( now - lastReaction < 100 ) {
+//                        parent.osync.wait( 100 - (now - lastReaction) ); // wait for 100msec or second event
+//                        lastReaction = System.currentTimeMillis();
+//                    }
+
+                if( chk ) {
                     notifyListenerState();
+                    sleep( 100 );
+                }
 
                 lastState = parent.getState();
                 lastPosition = parent.getCurrentPosition();
+                lastBufferedPosition = parent.getCurrentBufferedTimeMcsec();
+                lastTotalTime = parent.getTotalPlayTimeMcsec();
 
                 if( parent.getState() == PlayerState.STOPPED || parent.getState() == PlayerState.PAUSED ) {
                     synchronized( osync ) {
@@ -95,6 +117,16 @@ public class PlayerListenerNotificatorThread extends Thread {
             }
         }
 
+        private void callEOM() {
+            try {
+                PlayerEventListener l = parent.getListener();
+                if( l != null )
+                    l.endOfMedia();
+            } catch( Throwable t ) {
+                t.printStackTrace();
+            }
+        }
+
         @Override
         public void run() {
             try {
@@ -106,6 +138,8 @@ public class PlayerListenerNotificatorThread extends Thread {
 
                     do {
                         call();
+                        if( parent.getState() == PlayerState.STOPPED && parent.isEndOfMediaReached() )
+                            callEOM();
                     } while( eventCount.decrementAndGet() > 0 );
 
                     synchronized( osync ) {

@@ -1,4 +1,4 @@
-package javaaudiotest.player;
+package maryb.player;
 
 import javax.sound.sampled.SourceDataLine;
 
