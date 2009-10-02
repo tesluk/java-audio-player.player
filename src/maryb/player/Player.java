@@ -126,7 +126,7 @@ public final class Player {
     /* package */ volatile SourceDataLine currentDataLine;
 
     /* package */ final AtomicReference<PlayerThread> currentPlayerThread = new AtomicReference<PlayerThread>();
-
+    
     /* package */ int realInputStreamLength;
 
     /* package */ SourceDataLine getCurrentDataLine() {

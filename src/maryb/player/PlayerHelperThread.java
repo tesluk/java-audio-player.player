@@ -6,19 +6,28 @@ import javax.sound.sampled.SourceDataLine;
  *
  * @author cy6ergn0m
  */
-public class PlayerHelperThread extends Thread {
+/* package */ class PlayerHelperThread extends Thread {
 
     private final Player parent;
 
-    public PlayerHelperThread( Player parent ) {
+    private final PlayerThread creator;
+
+    public PlayerHelperThread( Player parent, PlayerThread creator ) {
         super( "player-helper-thread" );
         this.parent = parent;
+        this.creator = creator;
     }
 
     private volatile boolean dieRequested = false;
 
     private boolean isStopped() {
         return parent.getState() == PlayerState.PAUSED || parent.getState() == PlayerState.STOPPED;
+    }
+
+    private boolean aliveCriterion() {
+        return !dieRequested &&
+                !isStopped() &&
+                creator.isAlive();
     }
 
     @Override
@@ -31,7 +40,7 @@ public class PlayerHelperThread extends Thread {
             long time;
             long now, lpa, timeToSleep;
 
-            while( !dieRequested && !isStopped() ) {
+            while( aliveCriterion() ) {
                 now = System.currentTimeMillis();
                 lpa = parent.lastPlayerActivity;
                 timeToSleep = 400 - ( now - lpa );

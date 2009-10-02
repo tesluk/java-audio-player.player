@@ -6,11 +6,13 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * @author cy6ergn0m
  */
-public class PlayerListenerNotificatorThread extends Thread {
+/* package */ class PlayerListenerNotificatorThread extends Thread {
 
     private volatile boolean dieRequest = false;
 
     private final Player parent;
+
+    private final PlayerThread creator;
 
     private AtomicLong eventCount = new AtomicLong();
 
@@ -20,9 +22,10 @@ public class PlayerListenerNotificatorThread extends Thread {
 
     private long lastTime = 0;
 
-    public PlayerListenerNotificatorThread( Player parent ) {
+    public PlayerListenerNotificatorThread( Player parent, PlayerThread creator ) {
         super( "player-notification-dispatcher-thread" );
         this.parent = parent;
+        this.creator = creator;
     }
 
     private void notifyListenerState() throws InterruptedException {
@@ -44,9 +47,14 @@ public class PlayerListenerNotificatorThread extends Thread {
         lastTime = System.currentTimeMillis();
     }
 
+    private boolean isStopped() {
+        return parent.getState() == PlayerState.STOPPED || parent.getState() == PlayerState.PAUSED;
+    }
+
     private boolean aliveCriterion() {
-        return (parent.getState() != PlayerState.STOPPED && parent.getState() != PlayerState.PAUSED) ||
-                (parent.getPumpStream() != null && !parent.getPumpStream().isAllDownloaded() );
+        return !dieRequest && !(!isStopped() && !creator.isAlive()) &&
+                ( ( parent.getPumpStream() != null && !parent.getPumpStream().isAllDownloaded() ) ||
+                ( !isStopped() && creator.isAlive() ) );
     }
 
     @Override
@@ -58,7 +66,7 @@ public class PlayerListenerNotificatorThread extends Thread {
 
         try {
             notifyListenerState();
-            long now, lastReaction = 0;
+
             boolean chk = false;
             while( aliveCriterion() ) {
                 while( aliveCriterion() ) {
@@ -74,7 +82,7 @@ public class PlayerListenerNotificatorThread extends Thread {
                         parent.osync.wait();
                     }
                 }
-                
+
                 if( chk ) {
                     notifyListenerState();
                     sleep( 100 );
@@ -85,7 +93,7 @@ public class PlayerListenerNotificatorThread extends Thread {
                 lastBufferedPosition = parent.getCurrentBufferedTimeMcsec();
                 lastTotalTime = parent.getTotalPlayTimeMcsec();
 
-                if( parent.getState() == PlayerState.STOPPED || parent.getState() == PlayerState.PAUSED ) {
+                if( isStopped() ) {
                     dieRequest = !aliveCriterion();
                     synchronized( osync ) {
                         osync.notifyAll();
@@ -93,6 +101,11 @@ public class PlayerListenerNotificatorThread extends Thread {
                 }
             }
         } catch( InterruptedException ignore ) {
+        } finally {
+            dieRequest = true;
+            synchronized( osync ) {
+                osync.notifyAll();
+            }
         }
     }
 
