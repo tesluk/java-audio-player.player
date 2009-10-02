@@ -1,6 +1,6 @@
-package javaaudiotest.player;
+package maryb.player;
 
-import javaaudiotest.player.io.SeekablePumpStream;
+import maryb.player.io.SeekablePumpStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
@@ -14,14 +14,12 @@ import java.net.URLConnection;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javaaudiotest.player.io.EmulateSlowInputStream;
+import maryb.player.io.EmulateSlowInputStream;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.DataLine;
 import javax.sound.sampled.FloatControl;
 import javax.sound.sampled.Line;
-import javax.sound.sampled.LineEvent;
-import javax.sound.sampled.LineListener;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
 import javazoom.jl.decoder.Bitstream;
@@ -56,6 +54,8 @@ public final class Player {
 
     /* package */ volatile long lastPlayerActivity = 0;
 
+    private boolean endOfMediaReached = false;
+
     public float getCurrentVolume() {
         return currentVolume;
     }
@@ -87,15 +87,23 @@ public final class Player {
 
         stop();
         synchronized( osync ) {
+
+            currentBufferedTimeMcsec = 0;
+            currentPlayTimeMcsec = 0;
+            currentSeekPositionMcsec = 0;
+
             pump = pumpStream;
             is = realInputStream;
 
             pumpStream = null;
             is = null;
+
+            osync.notifyAll();
         }
 
         close( pump );
         close( is );
+
     }
 
     public PlayerState getState() {
@@ -124,6 +132,10 @@ public final class Player {
 
     public PlayerEventListener getListener() {
         return listener;
+    }
+
+    public boolean isEndOfMediaReached() {
+        return endOfMediaReached;
     }
     // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------
@@ -415,7 +427,7 @@ public final class Player {
                 if( f.exists() && !f.isDirectory() && f.canRead() )
                     realInputStream = new FileInputStream( f );
                 else
-                    throw new IllegalArgumentException( "Bad path to file" );
+                    throw new IllegalArgumentException( "Bad path to file: '" + location + "'" );
                 realInputStreamLength = (int) f.length();
                 if( slow )
                     realInputStream = new EmulateSlowInputStream( realInputStream, 0.3 );
@@ -479,10 +491,11 @@ public final class Player {
                         }
 
                     }.start();
-                    new PlayerBufferedResolverThread().start();
+                    new PlayerBufferedResolverThread( Player.this ).start();
                 }
 
                 resumeFromPause();
+                endOfMediaReached = false;
 
                 stream = pumpStream.openStream();
                 bstream = new Bitstream( stream );
@@ -518,6 +531,7 @@ public final class Player {
                     line.drain();
                     currentSeekPositionMcsec += line.getMicrosecondPosition();
                     currentPlayTimeMcsec = 0;
+                    endOfMediaReached = !dieRequested;
                     System.out.println( "last play position: " + ( line.getMicrosecondPosition() / 1000 ) + " ms" );
                 }
 
@@ -582,45 +596,6 @@ public final class Player {
 
         public void setRequestedState( PlayerState requestedState ) {
             this.requestedState = requestedState;
-        }
-
-    }
-
-    private class PlayerBufferedResolverThread extends Thread {
-
-        public PlayerBufferedResolverThread() {
-            super( "player-buffered-time-resolver-thread" );
-        }
-
-        private volatile boolean dieRequested = false;
-
-        @Override
-        public void run() {
-            try {
-                SeekablePumpStream s = pumpStream;
-                if( s != null ) {
-                    InputStream is = s.openStream();
-                    Bitstream bs = new Bitstream( is );
-                    currentBufferedTimeMcsec = 0;
-                    double value = 0;
-
-                    Header h;
-                    while( !dieRequested && ( h = bs.readFrame() ) != null ) {
-                        value = 1000. * h.ms_per_frame();
-
-                        currentBufferedTimeMcsec += (long) value;
-                        bs.closeFrame();
-                    }
-                }
-            } catch( BitstreamException e ) {
-                e.printStackTrace();
-            }/* catch( InterruptedException ignore ) {
-            }*/
-        }
-
-        public void die() {
-            dieRequested = true;
-            interrupt();
         }
 
     }

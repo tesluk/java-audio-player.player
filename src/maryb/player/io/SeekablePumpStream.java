@@ -1,4 +1,4 @@
-package javaaudiotest.player.io;
+package maryb.player.io;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
@@ -12,10 +12,15 @@ import java.io.InterruptedIOException;
 public class SeekablePumpStream {
 
     private final ByteBuffer bb = new ByteBuffer();
+
     private final Object osync = new Object();
+
     private volatile int wasReadFromSource = 0;
+
     private volatile boolean eof = false;
+
     private final InputStream rawStream;
+
     private final BufferedInputStream in;
 
     public SeekablePumpStream( InputStream rawStream ) {
@@ -52,10 +57,10 @@ public class SeekablePumpStream {
 
             try {
                 synchronized( osync ) {
-                    while ( wasReadFromSource == currentPosition && !eof )
+                    while( wasReadFromSource == currentPosition && !eof )
                         osync.wait();
                 }
-            } catch ( InterruptedException ex ) {
+            } catch( InterruptedException ex ) {
                 throw new InterruptedIOException();
             }
 
@@ -73,11 +78,11 @@ public class SeekablePumpStream {
 
                 try {
                     synchronized( osync ) {
-                        while ( wasReadFromSource == currentPosition && !eof ) {
+                        while( wasReadFromSource == currentPosition && !eof ) {
                             osync.wait();
                         }
                     }
-                } catch ( InterruptedException e ) {
+                } catch( InterruptedException e ) {
                     if( wasReadFromSource == currentPosition ) {
                         if( eof )
                             return 0;
@@ -87,13 +92,24 @@ public class SeekablePumpStream {
             }
 
             int wasRead = Math.min( wasReadFromSource - currentPosition, len );
-            if( wasRead == 0 ) {
+            if( wasRead > bb.getSize() - currentPosition )
+                wasRead = bb.getSize() - currentPosition;
+
+            if( wasRead <= 0 ) {
                 if( eof )
                     return -1;
                 return 0;
             }
 
-            System.arraycopy( bb.getBackBuffer(), currentPosition, b, off, wasRead );
+            try {
+                System.arraycopy( bb.getBackBuffer(), currentPosition, b, off, wasRead );
+            } catch( ArrayIndexOutOfBoundsException e ) {
+                // this possible if realClose was called between wasRead calculation
+                // and array copy method call
+                if( wasRead > bb.getSize() - currentPosition )
+                    return 0;
+                throw e;
+            }
             currentPosition += wasRead;
 
             return wasRead;
@@ -113,7 +129,7 @@ public class SeekablePumpStream {
             byte[] tmpBuffer = new byte[1024];
             long wasSkipped = 0;
 
-            while ( wasSkipped < n ) {
+            while( wasSkipped < n ) {
                 int toBeRead = (int) Math.min( ( n - wasSkipped ), tmpBuffer.length );
                 int wasRead = read( tmpBuffer, 0, toBeRead );
                 if( wasRead < 0 )
@@ -139,26 +155,35 @@ public class SeekablePumpStream {
                 return wasReadFromSource - currentPosition;
             }
         }
+
+    }
+
+    private void eof() {
+        eof = true;
+        synchronized( osync ) {
+            osync.notifyAll();
+        }
+        try {
+            if( in != null )
+                in.close();
+        } catch( IOException ignore ) {
+        }
     }
 
     public void pumpLoop() {
         byte[] buffer = new byte[1024];
 
-        while ( !eof && !closed ) {
+        while( !eof && !closed ) {
             int wasRead = 0;
             try {
                 wasRead = in.read( buffer );
                 if( wasRead == -1 ) {
-                    eof = true;
-                    in.close();
+                    eof();
                 }
-            } catch ( IOException e ) {
-                e.printStackTrace();
-                eof = true;
-                try {
-                    in.close();
-                } catch ( IOException ignore ) {
-                }
+            } catch( IOException e ) {
+                if( !"Stream closed".equals( e.getMessage() ) )
+                    e.printStackTrace();
+                eof();
             }
             if( wasRead > 0 ) {
                 bb.write( buffer, 0, wasRead );
@@ -169,18 +194,24 @@ public class SeekablePumpStream {
             }
         }
     }
+
     private volatile boolean closed = false;
 
     public void realClose() throws IOException {
-        closed = true;
-        bb.reset();
         eof = true;
+        closed = true;
         wasReadFromSource = 0;
+        bb.reset();
 
         in.close();
+
+        synchronized(osync) {
+            osync.notifyAll();
+        }
     }
 
     public boolean isAllDownloaded() {
         return eof;
     }
+
 }

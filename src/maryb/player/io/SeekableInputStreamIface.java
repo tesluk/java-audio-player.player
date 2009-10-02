@@ -1,4 +1,4 @@
-package javaaudiotest.player.io;
+package maryb.player.io;
 
 import java.io.IOException;
 import java.io.InputStream;

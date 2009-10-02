@@ -4,8 +4,8 @@
  */
 package javaaudiotest.player;
 
-import javaaudiotest.player.io.SeekablePumpStream;
-import javaaudiotest.player.io.SeekableInputStreamIface;
+import maryb.player.io.SeekablePumpStream;
+import maryb.player.io.SeekableInputStreamIface;
 import java.io.ByteArrayInputStream;
 import org.junit.After;
 import org.junit.AfterClass;

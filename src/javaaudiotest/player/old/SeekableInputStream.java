@@ -1,6 +1,6 @@
 package javaaudiotest.player.old;
 
-import javaaudiotest.player.io.ByteBuffer;
+import maryb.player.io.ByteBuffer;
 import javaaudiotest.player.*;
 import java.io.ByteArrayOutputStream;
 import java.io.FilterInputStream;
