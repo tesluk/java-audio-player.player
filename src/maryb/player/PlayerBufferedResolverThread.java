@@ -14,7 +14,7 @@ import javazoom.jl.decoder.Header;
  *
  * @author cy6ergn0m
  */
-public class PlayerBufferedResolverThread extends Thread {
+/* package */ class PlayerBufferedResolverThread extends Thread {
 
     private final Player parent;
 

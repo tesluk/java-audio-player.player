@@ -28,7 +28,7 @@ import maryb.player.io.SeekablePumpStream;
  *
  * @author cy6ergn0m
  */
-public class PlayerThread extends Thread {
+/* package */ class PlayerThread extends Thread {
 
     private final Player parent;
 
@@ -77,8 +77,8 @@ public class PlayerThread extends Thread {
             parent.setState( PlayerState.PLAYING );
             parent.osync.notifyAll();
         }
-        new PlayerListenerNotificatorThread( parent ).start();
-        new PlayerHelperThread( parent ).start();
+        new PlayerListenerNotificatorThread( parent, this ).start();
+        new PlayerHelperThread( parent, this ).start();
     }
 
     private boolean decodeFrame() throws BitstreamException, DecoderException, LineUnavailableException, InterruptedException {
@@ -331,6 +331,10 @@ public class PlayerThread extends Thread {
                         parent.currentPlayTimeMcsec = 0;
                         parent.setState( PlayerState.STOPPED );
                     }
+                    parent.osync.notifyAll();
+                }
+            } else {
+                synchronized(parent.osync) {
                     parent.osync.notifyAll();
                 }
             }
