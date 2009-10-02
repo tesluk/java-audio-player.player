@@ -44,6 +44,11 @@ public class PlayerListenerNotificatorThread extends Thread {
         lastTime = System.currentTimeMillis();
     }
 
+    private boolean aliveCriterion() {
+        return (parent.getState() != PlayerState.STOPPED && parent.getState() != PlayerState.PAUSED) ||
+                (parent.getPumpStream() != null && !parent.getPumpStream().isAllDownloaded() );
+    }
+
     @Override
     public void run() {
         PlayerState lastState = parent.getState();
@@ -54,9 +59,9 @@ public class PlayerListenerNotificatorThread extends Thread {
         try {
             notifyListenerState();
             long now, lastReaction = 0;
-            boolean chk;
-            while( !dieRequest ) {
-                while( true ) {
+            boolean chk = false;
+            while( aliveCriterion() ) {
+                while( aliveCriterion() ) {
                     chk = lastState != parent.getState() ||
                             lastPosition != parent.getCurrentPosition() ||
                             lastBufferedPosition != parent.getCurrentBufferedTimeMcsec() ||
@@ -69,12 +74,7 @@ public class PlayerListenerNotificatorThread extends Thread {
                         parent.osync.wait();
                     }
                 }
-//                    now = System.currentTimeMillis();
-//                    if( now - lastReaction < 100 ) {
-//                        parent.osync.wait( 100 - (now - lastReaction) ); // wait for 100msec or second event
-//                        lastReaction = System.currentTimeMillis();
-//                    }
-
+                
                 if( chk ) {
                     notifyListenerState();
                     sleep( 100 );
@@ -86,8 +86,8 @@ public class PlayerListenerNotificatorThread extends Thread {
                 lastTotalTime = parent.getTotalPlayTimeMcsec();
 
                 if( parent.getState() == PlayerState.STOPPED || parent.getState() == PlayerState.PAUSED ) {
+                    dieRequest = !aliveCriterion();
                     synchronized( osync ) {
-                        dieRequest = true;
                         osync.notifyAll();
                     }
                 }
