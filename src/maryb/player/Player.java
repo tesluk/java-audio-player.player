@@ -203,6 +203,11 @@ public final class Player {
         if( th != null ) {
             th.setRequestedState( st );
             th.die();
+        } else {
+            synchronized(osync) {
+                state = st;
+                osync.notifyAll();
+            }
         }
 
     }
