@@ -123,10 +123,16 @@ public final class Player {
 
     /* package */ final Object osync = new Object();
 
+    /* package */ final Object seekSync = new Object();
+
     /* package */ volatile SourceDataLine currentDataLine;
 
     /* package */ final AtomicReference<PlayerThread> currentPlayerThread = new AtomicReference<PlayerThread>();
-    
+
+    /* package */ SeekThread seekThread = null;
+
+    /* package */ long currentSeekTo = -1L;
+
     /* package */ int realInputStreamLength;
 
     /* package */ SourceDataLine getCurrentDataLine() {
@@ -226,6 +232,14 @@ public final class Player {
     public void pauseSync() throws InterruptedException {
         pause();
         waitForState( PlayerState.PAUSED );
+    }
+
+    public void seek( long newPos ) {
+        synchronized( seekSync ) {
+            currentSeekTo = newPos;
+            if( seekThread == null )
+                ( seekThread = new SeekThread( this ) ).start();
+        }
     }
 
     private static void close( Closeable c ) {

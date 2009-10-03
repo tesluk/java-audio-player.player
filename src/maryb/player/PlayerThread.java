@@ -72,13 +72,6 @@ import maryb.player.io.SeekablePumpStream;
         parent.populateVolume( line );
         //line.addLineListener( lineListener );
         line.start();
-
-        synchronized( parent.osync ) {
-            parent.setState( PlayerState.PLAYING );
-            parent.osync.notifyAll();
-        }
-        new PlayerListenerNotificatorThread( parent, this ).start();
-        new PlayerHelperThread( parent, this ).start();
     }
 
     private boolean decodeFrame() throws BitstreamException, DecoderException, LineUnavailableException, InterruptedException {
@@ -188,7 +181,6 @@ import maryb.player.io.SeekablePumpStream;
 //        }
     }
 
-
     private SourceDataLine createLine() {
         Line newLine = null;
 
@@ -253,6 +245,18 @@ import maryb.player.io.SeekablePumpStream;
             decoder = new Decoder();
 
             line = parent.currentDataLine = null;
+
+            synchronized( parent.seekSync ) {
+                while( parent.seekThread != null )
+                    parent.seekSync.wait();
+            }
+
+            synchronized( parent.osync ) {
+                parent.setState( PlayerState.PLAYING );
+                parent.osync.notifyAll();
+            }
+            new PlayerListenerNotificatorThread( parent, this ).start();
+            new PlayerHelperThread( parent, this ).start();
 
             skipFrames( parent.currentSeekPositionMcsec );
 
@@ -334,7 +338,7 @@ import maryb.player.io.SeekablePumpStream;
                     parent.osync.notifyAll();
                 }
             } else {
-                synchronized(parent.osync) {
+                synchronized( parent.osync ) {
                     parent.osync.notifyAll();
                 }
             }
