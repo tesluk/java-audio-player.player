@@ -7,7 +7,6 @@
  *      http://www.gnu.org/licenses/lgpl-3.0.txt
  *
  */
-
 package maryb.player;
 
 import maryb.player.io.SeekablePumpStream;
@@ -45,10 +44,20 @@ public final class Player {
 
     /* package */ boolean endOfMediaReached = false;
 
+    /**
+     * Retrieves current volume level.
+     * @return volume value in range between 0 and 1.
+     */
     public float getCurrentVolume() {
         return currentVolume;
     }
 
+    /**
+     * Updates current volume. If playback is running, updates sound line
+     * @param currentVolume volume value in range 0 and 1.
+     * @throws IllegalArgumentException in case when requested volume is not
+     * in expected range
+     */
     public void setCurrentVolume( float currentVolume ) {
         if( currentVolume > 1. || currentVolume < 0 )
             throw new IllegalArgumentException( "volume should be non-negative and less or equal to 1.0" );
@@ -59,10 +68,21 @@ public final class Player {
             populateVolume( line );
     }
 
+    /**
+     * Returns current source location
+     * @return location
+     */
     public String getSourceLocation() {
         return sourceLocation;
     }
 
+    /**
+     * Sets current source location.
+     * It can contain URL or path to local file.
+     * If playback is running, stop() is pending. All buffering operations
+     * will be interrupted.
+     * @param sourceLocation URL or path to local file
+     */
     public void setSourceLocation( String sourceLocation ) {
         if( this.sourceLocation == null )
             this.sourceLocation = sourceLocation;
@@ -95,6 +115,10 @@ public final class Player {
 
     }
 
+    /**
+     * Returns current player state
+     * @return
+     */
     public PlayerState getState() {
         return state;
     }
@@ -103,26 +127,52 @@ public final class Player {
         this.state = state;
     }
 
+    /**
+     * Returns size of buffered part of media. Size is represented by time in
+     * microseconds.
+     * @return how many microseconds was buffered
+     */
     public long getCurrentBufferedTimeMcsec() {
         return currentBufferedTimeMcsec;
     }
 
+    /**
+     * Returns current play position
+     * @return how many microseconds was played
+     */
     public long getCurrentPosition() {
         return currentPlayTimeMcsec + currentSeekPositionMcsec;
     }
 
+    /**
+     * Returns total size of playable media. Please note that this value is not
+     * updated before playback started.
+     * @return total media length in microseconds
+     */
     public long getTotalPlayTimeMcsec() {
         return totalPlayTimeMcsec;
     }
 
+    /**
+     * Set pointer to player events listener
+     * @param listener
+     */
     public void setListener( PlayerEventListener listener ) {
         this.listener = listener;
     }
 
+    /**
+     * Returns current player listener
+     * @return
+     */
     public PlayerEventListener getListener() {
         return listener;
     }
 
+    /**
+     * Checks, is last media was played and end of media was reached.
+     * @return
+     */
     public boolean isEndOfMediaReached() {
         return endOfMediaReached;
     }
@@ -179,6 +229,11 @@ public final class Player {
 //        }
 //    }
 
+    /**
+     * Attemts to start playback. If playback already running this method has no
+     * any effect. Playback startup is async operation: method initiates
+     * playback preparation and returns immediate - playback may run later.
+     */
     public void play() {
         if( state == PlayerState.PLAYING )
             return;
@@ -201,12 +256,16 @@ public final class Player {
     }
 
     /* package */ void setStateNotify( PlayerState pst ) {
-        synchronized(osync) {
+        synchronized( osync ) {
             state = pst;
             osync.notifyAll();
         }
     }
 
+    /**
+     * Initiate playback preparation and wait until playback will start.
+     * @throws InterruptedException
+     */
     public void playSync() throws InterruptedException {
         play();
         waitForState( PlayerState.PLAYING );
@@ -218,8 +277,8 @@ public final class Player {
 
         PlayerThread th = currentPlayerThread.get();
         if( th != null ) {
-            if(th.isAlive())
-                th.die(st);
+            if( th.isAlive() )
+                th.die( st );
             else if( currentPlayerThread.compareAndSet( th, null ) )
                 setStateNotify( st );
         } else
@@ -227,6 +286,10 @@ public final class Player {
 
     }
 
+    /**
+     * Requests playback stop. Method initiate shutdown and return immediate.
+     * Playback stops later.
+     */
     public void stop() {
         interruptPlayback( PlayerState.STOPPED );
         currentSeekPositionMcsec = 0;
@@ -240,20 +303,35 @@ public final class Player {
         }
     }
 
+    /**
+     * Initiates playback stop and wait util it stops.
+     * @throws InterruptedException
+     */
     public void stopSync() throws InterruptedException {
         stop();
         waitForState( PlayerState.STOPPED );
     }
 
+    /**
+     * Requests pause. Returns immediate.
+     */
     public void pause() {
         interruptPlayback( PlayerState.PAUSED );
     }
 
+    /**
+     * Requests pause and wait until playback pauses.
+     * @throws InterruptedException
+     */
     public void pauseSync() throws InterruptedException {
         pause();
         waitForState( PlayerState.PAUSED );
     }
 
+    /**
+     * Requests seek. Returns immediate. Seek will happens later.
+     * @param newPos
+     */
     public void seek( long newPos ) {
         synchronized( seekSync ) {
             currentSeekTo = newPos;
