@@ -89,6 +89,10 @@ import javax.sound.sampled.SourceDataLine;
             }
         } catch( InterruptedException ignore ) {
         } finally {
+            if( creator.isAlive() )
+                creator.die();
+            else if( !isStopped() )
+                parent.setStateNotify( PlayerState.STOPPED );
         }
     }
 

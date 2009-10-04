@@ -314,9 +314,10 @@ import maryb.player.io.SeekablePumpStream;
                 if( bstream != null )
                     bstream.close();
             } catch( BitstreamException ignore ) {
+            } catch( Throwable t ) {
+                t.printStackTrace();
             }
-            //close(pumpStream);
-            //close( realInputStream );
+            
             if( line != null ) {
                 mspos = line.getMicrosecondPosition() >> 32;
                 stopAndCloseLine();
