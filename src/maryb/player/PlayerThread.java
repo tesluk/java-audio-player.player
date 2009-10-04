@@ -1,3 +1,13 @@
+/**
+ *
+ * (c) Sergey Mashkov (aka cy6erGn0m), 2009
+ *
+ * License: GNU LGPL v3
+ * To read license read lgpl-3.0.txt from root of repository or follow URL:
+ *      http://www.gnu.org/licenses/lgpl-3.0.txt
+ *
+ */
+
 package maryb.player;
 
 import java.io.File;
@@ -5,14 +15,18 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.DataLine;
 import javax.sound.sampled.Line;
+import javax.sound.sampled.Line.Info;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
 import javazoom.jl.decoder.Bitstream;
@@ -44,7 +58,7 @@ import maryb.player.io.SeekablePumpStream;
 
     private SourceDataLine line;
 
-    private byte[] buff = new byte[8192];
+    private ByteBuffer bb = ByteBuffer.allocate( 8192 );
 
     private InputStream stream;
 
@@ -75,31 +89,49 @@ import maryb.player.io.SeekablePumpStream;
     }
 
     private boolean decodeFrame() throws BitstreamException, DecoderException, LineUnavailableException, InterruptedException {
-        Header h = bstream.readFrame();
-        if( h == null )
+        Header h;
+        SampleBuffer sb;
+
+        bb.clear();
+
+        float buffered = 0.f;
+        do {
+            h = bstream.readFrame();
+            if( h == null )
+                break;
+            sb = (SampleBuffer) decoder.decodeFrame( h, bstream );
+            if( line == null ) {
+                createOpenLine();    // TODO: бяка!
+                parent.totalPlayTimeMcsec = (long) ( 1000. * h.total_ms( parent.realInputStreamLength ) );
+                System.out.println( "fq: " + decoder.getOutputFrequency() );
+                System.out.println( "sr: " + line.getFormat().getSampleRate() );
+            }
+
+            short[] samples = sb.getBuffer();
+            int sz = samples.length << 1;
+            
+            if( sz > bb.capacity() ) {
+                int limit = bb.capacity() + 1024;
+                while( sz > limit )
+                    limit += 1024;
+                ByteBuffer newBb = ByteBuffer.allocate( limit );
+                newBb.clear();
+                bb.flip();
+                newBb.put( bb );
+                bb = newBb;
+            }
+
+            
+            bb.order( line.getFormat().isBigEndian()? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
+            for( short s : samples ) {
+                bb.putShort( s );
+            }
+            buffered += h.ms_per_frame();
+            bstream.closeFrame();
+        } while( buffered < 20.f );
+
+        if( bb.position() == 0 )
             return false;
-        SampleBuffer sb = (SampleBuffer) decoder.decodeFrame( h, bstream );
-
-        short[] samples = sb.getBuffer();
-        int sz = samples.length << 1;
-        if( sz > buff.length ) {
-            int limit = buff.length + 1024;
-            while( sz > limit )
-                limit += 1024;
-            buff = new byte[limit];
-        }
-
-        int idx = 0;
-        for( short s : samples ) {  // TODO: change it!!!!!
-            buff[idx++] = (byte) s;
-            buff[idx++] = (byte) ( s >> 8 );
-        }
-
-        if( line == null ) {
-            createOpenLine();    // TODO: бяка!
-            parent.totalPlayTimeMcsec = (long) ( 1000. * h.total_ms( parent.realInputStreamLength ) );
-        }
-
 
         synchronized( parent.osync ) {
             while( parent.getState() == PlayerState.PAUSED_BUFFERING )
@@ -107,16 +139,18 @@ import maryb.player.io.SeekablePumpStream;
             if( parent.getState() == PlayerState.STOPPED )
                 return false;
 
-            int wasWritten = 0;
-            while( wasWritten < idx && !dieRequested && line.isOpen() ) {
-                wasWritten += line.write( buff, 0, idx );
+            int wasWritten;
+            bb.flip();
+            while( bb.remaining() > 0 && !dieRequested && line.isOpen() ) {
+                if( (wasWritten = line.write( bb.array(), 0, bb.remaining() )) == -1 )
+                    break;
+                bb.position( bb.position() + wasWritten );
             }
         }
 
         framesPlayed++;
         //written pos in microseconds += (long) (1000.f * h.ms_per_frame());
 
-        bstream.closeFrame();
         return true;
     }
 
@@ -127,8 +161,10 @@ import maryb.player.io.SeekablePumpStream;
 
         if( location.startsWith( "http://" ) ) {
             //HttpURLConnection c =
+            HttpURLConnection.setFollowRedirects( true );
             URLConnection c = new URL( location ).openConnection();
             c.connect();
+
             parent.realInputStreamLength = c.getContentLength();
             parent.realInputStream = c.getInputStream();
         } else {
@@ -197,10 +233,14 @@ import maryb.player.io.SeekablePumpStream;
         return (SourceDataLine) newLine;
     }
 
-    private DataLine.Info getSourceLineInfo() {
+    private Line.Info getSourceLineInfo() {
         //DataLine.Info info = new DataLine.Info(SourceDataLine.class, fmt, 4000);
         DataLine.Info info = new DataLine.Info( SourceDataLine.class, getAudioFormatValue() );
-        return info;
+        Info[] infos = AudioSystem.getSourceLineInfo( info );
+        if( infos.length == 0 )
+            return null;
+
+        return infos[0];
     }
 
     private void skipFrames( long timeMcsec ) throws BitstreamException {
@@ -317,7 +357,7 @@ import maryb.player.io.SeekablePumpStream;
             } catch( Throwable t ) {
                 t.printStackTrace();
             }
-            
+
             if( line != null ) {
                 mspos = line.getMicrosecondPosition() >> 32;
                 stopAndCloseLine();
