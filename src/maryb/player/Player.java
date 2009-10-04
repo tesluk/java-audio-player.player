@@ -190,6 +190,13 @@ public final class Player {
         }
     }
 
+    private void setStateNotify( PlayerState pst ) {
+        synchronized(osync) {
+            state = pst;
+            osync.notifyAll();
+        }
+    }
+
     public void playSync() throws InterruptedException {
         play();
         waitForState( PlayerState.PLAYING );
@@ -201,14 +208,12 @@ public final class Player {
 
         PlayerThread th = currentPlayerThread.get();
         if( th != null ) {
-            th.setRequestedState( st );
-            th.die();
-        } else {
-            synchronized(osync) {
-                state = st;
-                osync.notifyAll();
-            }
-        }
+            if(th.isAlive())
+                th.die(st);
+            else if( currentPlayerThread.compareAndSet( th, null ) )
+                setStateNotify( st );
+        } else
+            setStateNotify( st );
 
     }
 

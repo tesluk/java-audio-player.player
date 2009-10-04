@@ -213,6 +213,17 @@ import maryb.player.io.SeekablePumpStream;
         }
     }
 
+    private void stopAndCloseLine() {
+        try {
+            line.stop();
+        } catch( Throwable ignore ) {
+        }
+        try {
+            line.close();
+        } catch( Throwable ignore ) {
+        }
+    }
+
     @Override
     public void run() {
         try {
@@ -308,8 +319,8 @@ import maryb.player.io.SeekablePumpStream;
             //close( realInputStream );
             if( line != null ) {
                 mspos = line.getMicrosecondPosition() >> 32;
-                line.stop();
-                line.close();
+                stopAndCloseLine();
+                line = null;
                 parent.currentDataLine = null;
             }
 
@@ -346,13 +357,16 @@ import maryb.player.io.SeekablePumpStream;
         }
     }
 
-    public void die() {
+    public void die( PlayerState requestedState ) {
+        if( requestedState != PlayerState.STOPPED && requestedState != PlayerState.PAUSED )
+            throw new IllegalArgumentException( "player thead may die only with stopped or paused state" );
+        this.requestedState = requestedState;
         dieRequested = true;
         interrupt();
     }
 
-    public void setRequestedState( PlayerState requestedState ) {
-        this.requestedState = requestedState;
+    public void die() {
+        die( PlayerState.STOPPED );
     }
 
 }
