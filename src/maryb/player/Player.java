@@ -190,7 +190,7 @@ public final class Player {
         }
     }
 
-    private void setStateNotify( PlayerState pst ) {
+    /* package */ void setStateNotify( PlayerState pst ) {
         synchronized(osync) {
             state = pst;
             osync.notifyAll();
