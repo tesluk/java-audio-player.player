@@ -133,8 +133,11 @@ import java.util.concurrent.atomic.AtomicLong;
         private void call() {
             try {
                 PlayerEventListener l = parent.getListener();
-                if( l != null )
+                if( l != null ) {
                     l.stateChanged();
+                    if( parent.getState() == PlayerState.PAUSED_BUFFERING )
+                        l.buffer();
+                }
             } catch( Throwable t ) {
                 t.printStackTrace();
             }
