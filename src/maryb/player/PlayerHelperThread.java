@@ -101,8 +101,8 @@ import javax.sound.sampled.SourceDataLine;
         } finally {
             if( creator.isAlive() )
                 creator.die();
-            else if( !isStopped() )
-                parent.setStateNotify( PlayerState.STOPPED );
+            //else if( !isStopped() )    // FIX for BUG 1.
+            //    parent.setStateNotify( PlayerState.STOPPED );
         }
     }
 

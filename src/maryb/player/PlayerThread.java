@@ -137,7 +137,7 @@ import maryb.player.io.SeekablePumpStream;
             while( parent.getState() == PlayerState.PAUSED_BUFFERING )
                 parent.osync.wait();
             if( parent.getState() == PlayerState.STOPPED )
-                return false;
+                return !dieRequested;
 
             int wasWritten;
             bb.flip();
@@ -313,7 +313,7 @@ import maryb.player.io.SeekablePumpStream;
 
             long lastUpdate = 0;
 
-            while( !dieRequested && framesPlayed < framesToBePlayed ) {
+            while( !dieRequested ) {
                 if( !decodeFrame() )
                     break;
 
@@ -336,7 +336,6 @@ import maryb.player.io.SeekablePumpStream;
                 parent.currentSeekPositionMcsec += line.getMicrosecondPosition();
                 parent.currentPlayTimeMcsec = 0;
                 parent.endOfMediaReached = !dieRequested;
-                System.out.println( "last play position: " + ( line.getMicrosecondPosition() / 1000 ) + " ms" );
             }
 
         } catch( BitstreamException e ) {
