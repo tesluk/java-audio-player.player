@@ -17,9 +17,20 @@ package maryb.player;
  */
 public interface PlayerEventListener {
 
+    /**
+     * Called by player when end of media reached. Will not happens at stop or
+     * pause.
+     */
     void endOfMedia();
 
+    /**
+     * Happens when player state, playback posion, buffered
+     * length or total media length has been changed
+     */
     void stateChanged();
 
+    /**
+     * Called in case when playback stalled due to low buffering speed
+     */
     void buffer();
 }

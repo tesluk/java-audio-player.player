@@ -50,7 +50,7 @@ import maryb.player.io.SeekablePumpStream;
 
     private Bitstream bstream;
 
-    private long mspos = 0;
+    private long mspos = 0; // TODO: whats for this?
 
     private int framesPlayed;
 
