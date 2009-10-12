@@ -105,6 +105,7 @@ import maryb.player.io.SeekablePumpStream;
                 parent.totalPlayTimeMcsec = (long) ( 1000. * h.total_ms( parent.realInputStreamLength ) );
                 System.out.println( "fq: " + decoder.getOutputFrequency() );
                 System.out.println( "sr: " + line.getFormat().getSampleRate() );
+                bb.order( line.getFormat().isBigEndian()? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
             }
 
             short[] samples = sb.getBuffer();
@@ -119,13 +120,12 @@ import maryb.player.io.SeekablePumpStream;
                 bb.flip();
                 newBb.put( bb );
                 bb = newBb;
+                bb.order( line.getFormat().isBigEndian()? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
             }
 
-            
-            bb.order( line.getFormat().isBigEndian()? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
-            for( short s : samples ) {
+            for( short s : samples )
                 bb.putShort( s );
-            }
+            
             buffered += h.ms_per_frame();
             bstream.closeFrame();
         } while( buffered < 20.f );
@@ -138,18 +138,15 @@ import maryb.player.io.SeekablePumpStream;
                 parent.osync.wait();
             if( parent.getState() == PlayerState.STOPPED )
                 return !dieRequested;
-
-            int wasWritten;
-            bb.flip();
-            while( bb.remaining() > 0 && !dieRequested && line.isOpen() ) {
-                if( (wasWritten = line.write( bb.array(), 0, bb.remaining() )) == -1 )
-                    break;
-                bb.position( bb.position() + wasWritten );
-            }
         }
 
-        framesPlayed++;
-        //written pos in microseconds += (long) (1000.f * h.ms_per_frame());
+        int wasWritten;
+        bb.flip();
+        while( bb.remaining() > 0 && !dieRequested && line.isOpen() && parent.getState() != PlayerState.STOPPED ) {
+            if( (wasWritten = line.write( bb.array(), 0, bb.remaining() )) == -1 )
+                break;
+            bb.position( bb.position() + wasWritten );
+        }
 
         return true;
     }
