@@ -240,7 +240,7 @@ public final class Player {
         PlayerThread th = currentPlayerThread.get();
 
         if( th == null ) {
-            th = new PlayerThread( Integer.MAX_VALUE, this );
+            th = new PlayerThread( this );
             if( currentPlayerThread.compareAndSet( null, th ) )
                 th.start();
         }

@@ -7,7 +7,6 @@
  *      http://www.gnu.org/licenses/lgpl-3.0.txt
  *
  */
-
 package maryb.player;
 
 import java.io.File;
@@ -50,12 +49,6 @@ import maryb.player.io.SeekablePumpStream;
 
     private Bitstream bstream;
 
-    private long mspos = 0; // TODO: whats for this?
-
-    private int framesPlayed;
-
-    private final int framesToBePlayed;
-
     private SourceDataLine line;
 
     private ByteBuffer bb = ByteBuffer.allocate( 8192 );
@@ -71,12 +64,11 @@ import maryb.player.io.SeekablePumpStream;
                 16,
                 decoder.getOutputChannels(),
                 true,
-                false );
+                ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN );
     }
 
-    public PlayerThread( int framesToBePlayed, Player parent ) {
+    public PlayerThread( Player parent ) {
         super( "player-playback-thread" );
-        this.framesToBePlayed = framesToBePlayed;
         this.parent = parent;
     }
 
@@ -105,12 +97,12 @@ import maryb.player.io.SeekablePumpStream;
                 parent.totalPlayTimeMcsec = (long) ( 1000. * h.total_ms( parent.realInputStreamLength ) );
                 System.out.println( "fq: " + decoder.getOutputFrequency() );
                 System.out.println( "sr: " + line.getFormat().getSampleRate() );
-                bb.order( line.getFormat().isBigEndian()? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
+                bb.order( line.getFormat().isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
             }
 
             short[] samples = sb.getBuffer();
             int sz = samples.length << 1;
-            
+
             if( sz > bb.capacity() ) {
                 int limit = bb.capacity() + 1024;
                 while( sz > limit )
@@ -120,12 +112,12 @@ import maryb.player.io.SeekablePumpStream;
                 bb.flip();
                 newBb.put( bb );
                 bb = newBb;
-                bb.order( line.getFormat().isBigEndian()? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
+                bb.order( line.getFormat().isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
             }
 
             for( short s : samples )
                 bb.putShort( s );
-            
+
             buffered += h.ms_per_frame();
             bstream.closeFrame();
         } while( buffered < 20.f );
@@ -143,7 +135,7 @@ import maryb.player.io.SeekablePumpStream;
         int wasWritten;
         bb.flip();
         while( bb.remaining() > 0 && !dieRequested && line.isOpen() && parent.getState() != PlayerState.STOPPED ) {
-            if( (wasWritten = line.write( bb.array(), 0, bb.remaining() )) == -1 )
+            if( ( wasWritten = line.write( bb.array(), 0, bb.remaining() ) ) == -1 )
                 break;
             bb.position( bb.position() + wasWritten );
         }
@@ -202,15 +194,6 @@ import maryb.player.io.SeekablePumpStream;
 //                parent.close( isr );
 //                close( is );
 //            }
-//        }
-    }
-
-    private void resumeFromPause() {
-//        synchronized( parent.osync ) {
-//            if( parent.getState() == PlayerState.PAUSED ) {
-//                //currentSeekPositionMcsec = getCurrentPosition(); // TODO: is it actualy required?
-//                //currentPlayTimeMcsec = 0;
-//                }
 //        }
     }
 
@@ -283,7 +266,6 @@ import maryb.player.io.SeekablePumpStream;
             } else {
             }
 
-            resumeFromPause();
             parent.endOfMediaReached = false;
 
             stream = parent.getPumpStream().openStream();
@@ -355,7 +337,6 @@ import maryb.player.io.SeekablePumpStream;
             }
 
             if( line != null ) {
-                mspos = line.getMicrosecondPosition() >> 32;
                 stopAndCloseLine();
                 line = null;
                 parent.currentDataLine = null;
