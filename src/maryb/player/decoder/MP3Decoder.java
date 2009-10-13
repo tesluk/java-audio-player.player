@@ -35,6 +35,8 @@ public class MP3Decoder implements AbstractDecoder {
 
     private final Bitstream bstream;
 
+    private Header firstHeader;
+
     public MP3Decoder( InputStream is ) {
         this.is = is;
 
@@ -58,6 +60,7 @@ public class MP3Decoder implements AbstractDecoder {
             Header h = bstream.readFrame();
             decoder.decodeFrame( h, bstream );
             bstream.unreadFrame();
+            firstHeader = h;
 
             prepared = true;
         } catch( DecoderException ex ) {
@@ -82,6 +85,14 @@ public class MP3Decoder implements AbstractDecoder {
             Logger.getLogger( MP3Decoder.class.getName() ).log( Level.SEVERE, null, ex );
         }
         return null;
+    }
+
+    public long evaluateTotalTime( long streamLength ) {
+        if( !prepared )
+            prepareDecode();
+
+        // TODO: process long value by Integer.MAX_VALUE portions
+        return (long) ( 1000. * firstHeader.total_ms( (int) streamLength ) );
     }
 
 }
