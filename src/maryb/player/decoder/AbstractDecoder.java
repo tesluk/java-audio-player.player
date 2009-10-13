@@ -23,4 +23,6 @@ public interface AbstractDecoder {
 
     short[] decodePortion();
 
+    long evaluateTotalTime( long streamLength );
+
 }
