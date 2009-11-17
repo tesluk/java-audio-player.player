@@ -208,13 +208,29 @@ public final class Player {
     }
 
     /* package */ void populateVolume( SourceDataLine line ) {
-        if( line != null && line.isControlSupported( FloatControl.Type.MASTER_GAIN ) ) {
-            FloatControl c = (FloatControl) line.getControl( FloatControl.Type.MASTER_GAIN );
-            float interval = c.getMaximum() - c.getMinimum();
-            float cv = currentVolume;
+        try {
+            if( line != null && line.isControlSupported( FloatControl.Type.VOLUME ) ) {
+                FloatControl c = (FloatControl) line.getControl( FloatControl.Type.VOLUME );
+                float interval = c.getMaximum() - c.getMinimum();
+                float cv = currentVolume;
 
-            interval *= cv;
-            c.setValue( c.getMinimum() + interval );
+                interval *= cv;
+                c.setValue( c.getMinimum() + interval );
+            }
+            return;
+        } catch(Throwable t) {
+        }
+        try {
+            if( line != null && line.isControlSupported( FloatControl.Type.MASTER_GAIN ) ) {
+                FloatControl c = (FloatControl) line.getControl( FloatControl.Type.MASTER_GAIN );
+                float interval = c.getMaximum() - c.getMinimum();
+                float cv = currentVolume;
+
+                interval *= cv;
+                c.setValue( c.getMinimum() + interval );
+            }
+            return;
+        } catch(Throwable t) {
         }
     }
 //
