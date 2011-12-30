@@ -217,9 +217,9 @@ public final class Player {
 
                 interval *= cv;
                 c.setValue( c.getMinimum() + interval );
+                return;
             }
-            return;
-        } catch(Throwable t) {
+        } catch(Throwable ignore) {
         }
         try {
             if( line != null && line.isControlSupported( FloatControl.Type.MASTER_GAIN ) ) {
@@ -230,8 +230,7 @@ public final class Player {
                 interval *= cv;
                 c.setValue( c.getMinimum() + interval );
             }
-            return;
-        } catch(Throwable t) {
+        } catch(Throwable ignore) {
         }
     }
 //
