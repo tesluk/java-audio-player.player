@@ -69,12 +69,13 @@ import maryb.player.io.SeekablePumpStream;
 
     public PlayerThread( Player parent ) {
         super( "player-playback-thread" );
+        setPriority( MAX_PRIORITY );
         this.parent = parent;
     }
 
     private void createOpenLine() throws LineUnavailableException {
         line = parent.currentDataLine = createLine();
-        line.open( getAudioFormatValue() );
+        line.open( getAudioFormatValue(), 88200 );
         parent.populateVolume( line );
         //line.addLineListener( lineListener );
         line.start();
