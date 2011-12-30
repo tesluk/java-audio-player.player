@@ -39,7 +39,7 @@ import java.util.logging.Logger;
 
     private SourceDataLine line;
 
-    private ByteBuffer bb = ByteBuffer.allocate(8192);
+    private ByteBuffer bb = ByteBuffer.allocate(88200);
 
     private InputStream stream;
 
@@ -52,7 +52,18 @@ import java.util.logging.Logger;
                 16,
                 decoder.getOutputChannels(),
                 true,
-                ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN);
+                false);
+
+//        LOG.info("File info: bs = " + decoder.getOutputBlockSize() + ", channels =" + decoder.getOutputChannels() + ", freq = " + decoder.getOutputFrequency());
+        
+//        return new AudioFormat(AudioFormat.Encoding.PCM_SIGNED,
+//                decoder.getOutputFrequency(),
+//                16,
+//                decoder.getOutputChannels(),
+//                decoder.getOutputChannels() * 2,
+//                decoder.getOutputFrequency(),
+//                false
+//                );
     }
 
     public PlayerThread(Player parent) {
@@ -64,6 +75,8 @@ import java.util.logging.Logger;
     private void createOpenLine() throws LineUnavailableException {
         line = parent.currentDataLine = createLine();
         line.open(getAudioFormatValue(), 88200);
+        LOG.info("Line opened for the format " + line.getFormat());
+
         parent.populateVolume(line);
         line.start();
     }
@@ -85,16 +98,17 @@ import java.util.logging.Logger;
                 parent.totalPlayTimeMcsec = (long) (1000. * h.total_ms(parent.realInputStreamLength));
                 LOG.log(Level.FINE, "fq: " + decoder.getOutputFrequency());
                 LOG.log(Level.FINE, "sr: " + line.getFormat().getSampleRate());
-                
+
                 bb.order(line.getFormat().isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN);
             }
 
             short[] samples = sb.getBuffer();
-            int sz = samples.length << 1;
+            int sz = sb.getBufferLength() * 2;
 
-            if (sz > bb.capacity()) {
+            if (sz > bb.remaining()) {
+                int olsSize = bb.position() + sz;
                 int limit = bb.capacity() + 1024;
-                while (sz > limit)
+                while (olsSize > limit)
                     limit += 1024;
                 ByteBuffer newBb = ByteBuffer.allocate(limit);
                 newBb.clear();
@@ -104,12 +118,12 @@ import java.util.logging.Logger;
                 bb.order(line.getFormat().isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN);
             }
 
-            for (short s : samples)
-                bb.putShort(s);
+            for (int idx = 0, m = sb.getBufferLength(); idx < m; ++idx)
+                bb.putShort(samples[idx]);
 
             buffered += h.ms_per_frame();
             bstream.closeFrame();
-        } while (buffered < 20.f);
+        } while (buffered < 200.f);
 
         if (bb.position() == 0)
             return false;
@@ -191,7 +205,7 @@ import java.util.logging.Logger;
         try {
             newLine = AudioSystem.getLine(getSourceLineInfo());
         } catch (LineUnavailableException ex) {
-            Logger.getLogger(Player.class.getName()).log(Level.SEVERE, null, ex);
+            LOG.log(Level.SEVERE, null, ex);
         }
 
         if (newLine == null || !(newLine instanceof SourceDataLine)) {
@@ -205,10 +219,15 @@ import java.util.logging.Logger;
         //DataLine.Info info = new DataLine.Info(SourceDataLine.class, fmt, 4000);
         DataLine.Info info = new DataLine.Info(SourceDataLine.class, getAudioFormatValue());
         Info[] infos = AudioSystem.getSourceLineInfo(info);
-        if (infos.length == 0)
+        if (infos.length == 0) {
+            LOG.warning("There are no suitable lines for format " + getAudioFormatValue());
             return null;
+        }
 
-        return infos[0];
+        Info selected = infos[0];
+        LOG.info("Selected channel: " + selected.toString());
+
+        return selected;
     }
 
     private void skipFrames(long timeMcsec) throws BitstreamException {
