@@ -9,11 +9,13 @@
  */
 package maryb.player;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InterruptedIOException;
+import javazoom.jl.decoder.*;
+import maryb.player.io.EmulateSlowInputStream;
+import maryb.player.io.SeekablePumpStream;
+
+import javax.sound.sampled.*;
+import javax.sound.sampled.Line.Info;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
@@ -21,28 +23,14 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.DataLine;
-import javax.sound.sampled.Line;
-import javax.sound.sampled.Line.Info;
-import javax.sound.sampled.LineUnavailableException;
-import javax.sound.sampled.SourceDataLine;
-import javazoom.jl.decoder.Bitstream;
-import javazoom.jl.decoder.BitstreamException;
-import javazoom.jl.decoder.Decoder;
-import javazoom.jl.decoder.DecoderException;
-import javazoom.jl.decoder.Header;
-import javazoom.jl.decoder.SampleBuffer;
-import maryb.player.io.EmulateSlowInputStream;
-import maryb.player.io.SeekablePumpStream;
 
 /**
- *
  * @author cy6ergn0m
  */
 /* package */ class PlayerThread extends Thread {
 
+    private static final Logger LOG = Logger.getLogger(PlayerThread.class.getName());
+    
     private final Player parent;
 
     private volatile boolean dieRequested = false;
@@ -51,7 +39,7 @@ import maryb.player.io.SeekablePumpStream;
 
     private SourceDataLine line;
 
-    private ByteBuffer bb = ByteBuffer.allocate( 8192 );
+    private ByteBuffer bb = ByteBuffer.allocate(8192);
 
     private InputStream stream;
 
@@ -60,24 +48,23 @@ import maryb.player.io.SeekablePumpStream;
     private Decoder decoder;
 
     private AudioFormat getAudioFormatValue() {
-        return new AudioFormat( decoder.getOutputFrequency(),
+        return new AudioFormat(decoder.getOutputFrequency(),
                 16,
                 decoder.getOutputChannels(),
                 true,
-                ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN );
+                ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN);
     }
 
-    public PlayerThread( Player parent ) {
-        super( "player-playback-thread" );
-        setPriority( MAX_PRIORITY );
+    public PlayerThread(Player parent) {
+        super("player-playback-thread");
+        setPriority(MAX_PRIORITY);
         this.parent = parent;
     }
 
     private void createOpenLine() throws LineUnavailableException {
         line = parent.currentDataLine = createLine();
-        line.open( getAudioFormatValue(), 88200 );
-        parent.populateVolume( line );
-        //line.addLineListener( lineListener );
+        line.open(getAudioFormatValue(), 88200);
+        parent.populateVolume(line);
         line.start();
     }
 
@@ -90,55 +77,56 @@ import maryb.player.io.SeekablePumpStream;
         float buffered = 0.f;
         do {
             h = bstream.readFrame();
-            if( h == null )
+            if (h == null)
                 break;
-            sb = (SampleBuffer) decoder.decodeFrame( h, bstream );
-            if( line == null ) {
+            sb = (SampleBuffer) decoder.decodeFrame(h, bstream);
+            if (line == null) {
                 createOpenLine();    // TODO: бяка!
-                parent.totalPlayTimeMcsec = (long) ( 1000. * h.total_ms( parent.realInputStreamLength ) );
-                System.out.println( "fq: " + decoder.getOutputFrequency() );
-                System.out.println( "sr: " + line.getFormat().getSampleRate() );
-                bb.order( line.getFormat().isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
+                parent.totalPlayTimeMcsec = (long) (1000. * h.total_ms(parent.realInputStreamLength));
+                LOG.log(Level.FINE, "fq: " + decoder.getOutputFrequency());
+                LOG.log(Level.FINE, "sr: " + line.getFormat().getSampleRate());
+                
+                bb.order(line.getFormat().isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN);
             }
 
             short[] samples = sb.getBuffer();
             int sz = samples.length << 1;
 
-            if( sz > bb.capacity() ) {
+            if (sz > bb.capacity()) {
                 int limit = bb.capacity() + 1024;
-                while( sz > limit )
+                while (sz > limit)
                     limit += 1024;
-                ByteBuffer newBb = ByteBuffer.allocate( limit );
+                ByteBuffer newBb = ByteBuffer.allocate(limit);
                 newBb.clear();
                 bb.flip();
-                newBb.put( bb );
+                newBb.put(bb);
                 bb = newBb;
-                bb.order( line.getFormat().isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN );
+                bb.order(line.getFormat().isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN);
             }
 
-            for( short s : samples )
-                bb.putShort( s );
+            for (short s : samples)
+                bb.putShort(s);
 
             buffered += h.ms_per_frame();
             bstream.closeFrame();
-        } while( buffered < 20.f );
+        } while (buffered < 20.f);
 
-        if( bb.position() == 0 )
+        if (bb.position() == 0)
             return false;
 
-        synchronized( parent.osync ) {
-            while( parent.getState() == PlayerState.PAUSED_BUFFERING )
+        synchronized (parent.osync) {
+            while (parent.getState() == PlayerState.PAUSED_BUFFERING)
                 parent.osync.wait();
-            if( parent.getState() == PlayerState.STOPPED )
+            if (parent.getState() == PlayerState.STOPPED)
                 return !dieRequested;
         }
 
         int wasWritten;
         bb.flip();
-        while( bb.remaining() > 0 && !dieRequested && line.isOpen() && parent.getState() != PlayerState.STOPPED ) {
-            if( ( wasWritten = line.write( bb.array(), 0, bb.remaining() ) ) == -1 )
+        while (bb.remaining() > 0 && !dieRequested && line.isOpen() && parent.getState() != PlayerState.STOPPED) {
+            if ((wasWritten = line.write(bb.array(), 0, bb.remaining())) == -1)
                 break;
-            bb.position( bb.position() + wasWritten );
+            bb.position(bb.position() + wasWritten);
         }
 
         return true;
@@ -146,32 +134,31 @@ import maryb.player.io.SeekablePumpStream;
 
     private void openInputStream() throws IOException {
         String location = parent.getSourceLocation();
-        if( location == null )
+        if (location == null)
             throw new IllegalArgumentException();
 
-        if( location.startsWith( "http://" ) ) {
-            //HttpURLConnection c =
-            HttpURLConnection.setFollowRedirects( true );
-            URLConnection c = new URL( location ).openConnection();
+        if (location.startsWith("http://")) {
+            HttpURLConnection.setFollowRedirects(true);
+            URLConnection c = new URL(location).openConnection();
             c.connect();
 
             parent.realInputStreamLength = c.getContentLength();
             parent.realInputStream = c.getInputStream();
         } else {
             boolean slow = false;
-            if( location.startsWith( "!" ) ) {
+            if (location.startsWith("!")) {
                 // debug case: slow input stream impl
-                location = location.substring( 1 );
+                location = location.substring(1);
                 slow = true;
             }
-            File f = new File( location );
-            if( f.exists() && !f.isDirectory() && f.canRead() )
-                parent.realInputStream = new FileInputStream( f );
+            File f = new File(location);
+            if (f.exists() && !f.isDirectory() && f.canRead())
+                parent.realInputStream = new FileInputStream(f);
             else
-                throw new IllegalArgumentException( "Bad path to file: '" + location + "'" );
+                throw new IllegalArgumentException("Bad path to file: '" + location + "'");
             parent.realInputStreamLength = (int) f.length();
-            if( slow )
-                parent.realInputStream = new EmulateSlowInputStream( parent.realInputStream, 0.3 );
+            if (slow)
+                parent.realInputStream = new EmulateSlowInputStream(parent.realInputStream, 0.3);
         }
     }
 
@@ -202,12 +189,12 @@ import maryb.player.io.SeekablePumpStream;
         Line newLine = null;
 
         try {
-            newLine = AudioSystem.getLine( getSourceLineInfo() );
-        } catch( LineUnavailableException ex ) {
-            Logger.getLogger( Player.class.getName() ).log( Level.SEVERE, null, ex );
+            newLine = AudioSystem.getLine(getSourceLineInfo());
+        } catch (LineUnavailableException ex) {
+            Logger.getLogger(Player.class.getName()).log(Level.SEVERE, null, ex);
         }
 
-        if( newLine == null || !( newLine instanceof SourceDataLine ) ) {
+        if (newLine == null || !(newLine instanceof SourceDataLine)) {
             return null; // TODO: handle problem
         }
 
@@ -216,20 +203,20 @@ import maryb.player.io.SeekablePumpStream;
 
     private Line.Info getSourceLineInfo() {
         //DataLine.Info info = new DataLine.Info(SourceDataLine.class, fmt, 4000);
-        DataLine.Info info = new DataLine.Info( SourceDataLine.class, getAudioFormatValue() );
-        Info[] infos = AudioSystem.getSourceLineInfo( info );
-        if( infos.length == 0 )
+        DataLine.Info info = new DataLine.Info(SourceDataLine.class, getAudioFormatValue());
+        Info[] infos = AudioSystem.getSourceLineInfo(info);
+        if (infos.length == 0)
             return null;
 
         return infos[0];
     }
 
-    private void skipFrames( long timeMcsec ) throws BitstreamException {
+    private void skipFrames(long timeMcsec) throws BitstreamException {
         long skipped = 0;
         Header h;
 
-        while( !dieRequested && ( skipped < timeMcsec ) && ( ( h = bstream.readFrame() ) != null ) ) {
-            skipped += (long) ( 1000. * h.ms_per_frame() );
+        while (!dieRequested && (skipped < timeMcsec) && ((h = bstream.readFrame()) != null)) {
+            skipped += (long) (1000. * h.ms_per_frame());
             bstream.closeFrame();
         }
     }
@@ -237,72 +224,72 @@ import maryb.player.io.SeekablePumpStream;
     private void stopAndCloseLine() {
         try {
             line.stop();
-        } catch( Throwable ignore ) {
+        } catch (Throwable ignore) {
         }
         try {
             line.close();
-        } catch( Throwable ignore ) {
+        } catch (Throwable ignore) {
         }
     }
 
     @Override
     public void run() {
         try {
-            if( parent.getPumpStream() == null ) {
+            if (parent.getPumpStream() == null) {
                 openInputStream();
-                parent.setPumpStream( new SeekablePumpStream( parent.realInputStream ) );
+                parent.setPumpStream(new SeekablePumpStream(parent.realInputStream));
 
-                new Thread( "player-stream-pump-thread" ) {
+                new Thread("player-stream-pump-thread") {
 
                     @Override
                     public void run() {
                         parent.getPumpStream().pumpLoop();
-                        synchronized( parent.osync ) {
+                        synchronized (parent.osync) {
                             parent.osync.notifyAll();
                         }
                     }
 
                 }.start();
-                new PlayerBufferedResolverThread( parent ).start();
+                new PlayerBufferedResolverThread(parent).start();
             } else {
             }
 
             parent.endOfMediaReached = false;
 
             stream = parent.getPumpStream().openStream();
-            bstream = new Bitstream( stream );
+            bstream = new Bitstream(stream);
             processID3v2();
 
             decoder = new Decoder();
 
             line = parent.currentDataLine = null;
 
-            synchronized( parent.seekSync ) {
-                while( parent.seekThread != null )
+            synchronized (parent.seekSync) {
+                while (parent.seekThread != null)
                     parent.seekSync.wait();
             }
 
-            synchronized( parent.osync ) {
-                parent.setState( PlayerState.PLAYING );
+            synchronized (parent.osync) {
+                parent.setState(PlayerState.PLAYING);
                 parent.osync.notifyAll();
             }
-            new PlayerListenerNotificatorThread( parent, this ).start();
-            new PlayerHelperThread( parent, this ).start();
+            new PlayerListenerNotificatorThread(parent, this).start();
+            new PlayerHelperThread(parent, this).start();
 
-            skipFrames( parent.currentSeekPositionMcsec );
+            skipFrames(parent.currentSeekPositionMcsec);
 
             long lastUpdate = 0;
 
-            while( !dieRequested ) {
-                if( !decodeFrame() )
+            while (!dieRequested) {
+                if (!decodeFrame())
                     break;
 
                 parent.currentPlayTimeMcsec = line.getMicrosecondPosition();
 
                 long now = System.currentTimeMillis();
                 parent.lastPlayerActivity = now;
-                if( now - lastUpdate > 250 ) {
-                    synchronized( parent.osync ) {
+                if (now - lastUpdate > 250) {
+                    synchronized (parent.osync) {
                         parent.osync.notifyAll();
                     }
                     lastUpdate = now;
@@ -310,7 +297,7 @@ import maryb.player.io.SeekablePumpStream;
 
             }
 
-            if( line != null ) {
+            if (line != null) {
                 line.flush();
                 line.drain();
                 parent.currentSeekPositionMcsec += line.getMicrosecondPosition();
@@ -318,57 +305,57 @@ import maryb.player.io.SeekablePumpStream;
                 parent.endOfMediaReached = !dieRequested;
             }
 
-        } catch( BitstreamException e ) {
+        } catch (BitstreamException e) {
             e.printStackTrace();
-        } catch( InterruptedIOException ignore ) {
-        } catch( IOException e ) {
+        } catch (InterruptedIOException ignore) {
+        } catch (IOException e) {
             e.printStackTrace();
-        } catch( DecoderException e ) {
+        } catch (DecoderException e) {
             e.printStackTrace();
-        } catch( LineUnavailableException e ) {
+        } catch (LineUnavailableException e) {
             e.printStackTrace();
-        } catch( InterruptedException e ) {
+        } catch (InterruptedException ignore) {
         } finally {
             try {
-                if( bstream != null )
+                if (bstream != null)
                     bstream.close();
-            } catch( BitstreamException ignore ) {
-            } catch( Throwable t ) {
+            } catch (BitstreamException ignore) {
+            } catch (Throwable t) {
                 t.printStackTrace();
             }
 
-            if( line != null ) {
+            if (line != null) {
                 stopAndCloseLine();
                 line = null;
                 parent.currentDataLine = null;
             }
 
-            if( parent.currentPlayerThread.compareAndSet( this, null ) ) {
+            if (parent.currentPlayerThread.compareAndSet(this, null)) {
                 // TODO: notify stopped
-                synchronized( parent.osync ) {
-                    if( requestedState != null ) {
-                        switch( requestedState ) {
+                synchronized (parent.osync) {
+                    if (requestedState != null) {
+                        switch (requestedState) {
                             case STOPPED:
                                 parent.currentSeekPositionMcsec = 0;
-                                parent.setState( requestedState );
+                                parent.setState(requestedState);
                                 break;
                             case PAUSED:
-                                parent.setState( requestedState );
+                                parent.setState(requestedState);
                                 break;
                             default:
-                                parent.setState( PlayerState.STOPPED );
+                                parent.setState(PlayerState.STOPPED);
                                 break;
                         }
 
                     } else {
                         parent.currentSeekPositionMcsec = 0;
                         parent.currentPlayTimeMcsec = 0;
-                        parent.setState( PlayerState.STOPPED );
+                        parent.setState(PlayerState.STOPPED);
                     }
                     parent.osync.notifyAll();
                 }
             } else {
-                synchronized( parent.osync ) {
+                synchronized (parent.osync) {
                     parent.osync.notifyAll();
                 }
             }
@@ -376,16 +363,16 @@ import maryb.player.io.SeekablePumpStream;
         }
     }
 
-    public void die( PlayerState requestedState ) {
-        if( requestedState != PlayerState.STOPPED && requestedState != PlayerState.PAUSED )
-            throw new IllegalArgumentException( "player thead may die only with stopped or paused state" );
+    public void die(PlayerState requestedState) {
+        if (requestedState != PlayerState.STOPPED && requestedState != PlayerState.PAUSED)
+            throw new IllegalArgumentException("player thread may die only with stopped or paused state");
         this.requestedState = requestedState;
         dieRequested = true;
         interrupt();
     }
 
     public void die() {
-        die( PlayerState.STOPPED );
+        die(PlayerState.STOPPED);
     }
 
 }
