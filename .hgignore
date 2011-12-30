@@ -3,4 +3,4 @@ build/*
 test_mp3/*
 .idea/*
 JavaMediaPlayer.iml
-
+out/*
