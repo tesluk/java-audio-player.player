@@ -10,12 +10,13 @@
 package maryb.player;
 
 import maryb.player.io.SeekablePumpStream;
+
+import javax.sound.sampled.FloatControl;
+import javax.sound.sampled.SourceDataLine;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.sound.sampled.FloatControl;
-import javax.sound.sampled.SourceDataLine;
 
 /**
  *
@@ -105,7 +106,7 @@ public final class Player {
             is = realInputStream;
 
             pumpStream = null;
-            is = null;
+            realInputStream = null;
 
             osync.notifyAll();
         }
